@@ -212,68 +212,99 @@ struct BaseView:View{
                     
                 }
             }.edgesIgnoringSafeArea(.all)
-                .sheet(isPresented: self.$isShown, content: {Text("Hello")})
+                .sheet(isPresented: self.$isShown, content: {ListView()})
     }
 }
-/*
-struct ListSheet:View {
-    var documents:[[String:Any]] = []
-    var record:[(lines:[DrawPoints],timeStamp:Date,totalCounts:Int)] = []
-    init(){
-        Firestore.firestore().collection("points")
-            .addSnapshotListener{ querySnapshot, error in
-                guard let documents = querySnapshot?.documents else{
-                    print("Error fetching documents:\(error!)")
-                    return
-                }
-                //
-                for document in documents{
-                    var lines:(lines:[DrawPoints],timeStamp:Date,totalCounts:Int)
-                    let timeStamp = document["timeStamp"] as! Timestamp
-                    lines.timeStamp = timeStamp.dateValue()
-                    
-                    let lineCount = document["totalLines"] as! Int
-                    var totalCounts:Int = 0
-                    var drawPoint:DrawPoints = DrawPoints()
-                    for lineNum in 0..<lineCount{
-                        let line = document["\(lineNum)"] as! [String:Any]
-                        let x = line["x"] as! [Double]
-                        let y = line["y"] as! [Double]
-                        var points:[CGPoint] = []
-                        for i in 0..<x.count{
-                            totalCounts += 1
-                            points.append(CGPoint(x: CGFloat(x[i]), y: CGFloat(y[i])))
-                        }
-                        drawPoint.points = points
-                    }
-                    //lines.lines = drawPoint
-                    
-                    
-                }
-                /*
-                documents.map{
-                    let dateValue = $0["timeStamp"] as! Timestamp
-                    print(dateValue.dateValue())
-                    
-                     let f = DateFormatter()
-                     f.locale = Locale(identifier: "ja_JP")
-                     f.dateStyle = .long
-                     f.timeStyle = .none
-                     let date = f.string(from: dateValue)
-                     print("date: \(date)")
-
-                     
-                    }*/
+struct Record:Identifiable{
+    var id = UUID()
+    var createdAt:Date
+    var drawPointsArray:[DrawPoints]
+    
+    init(document:QueryDocumentSnapshot){
+        let timeStamp = document["timeStamp"] as! Timestamp
+        self.createdAt = timeStamp.dateValue()
+        self.drawPointsArray = []
+        let totalLines = document["totalLines"] as! Int
+        for i in 0..<totalLines{
+            let line = document[String(i)] as! [String:Any]
+            let x = line["x"] as! [CGFloat]
+            let y = line["y"] as! [CGFloat]
+            let lineThickness = line["lineThickness"] as! CGFloat
+            let colorString = line["lineColor"] as! String
+            let lineColor = self.getLineColor(colorString: colorString)
+            let lineOpacity = line["lineOpacity"] as! Double
+            let drawPoints:DrawPoints = DrawPoints(x: x, y: y, lineColor: lineColor, lineThickness: lineThickness, lineOpacity: lineOpacity)
+            self.drawPointsArray.append(drawPoints)
         }
     }
-    
-    
-    
-    var body: some View{
-        Text("ListSheet")
+    func getLineColor(colorString:String)->Color{
+        switch colorString{
+        case "black":
+            return Color.black
+        default:
+            return Color.black
+        }
     }
 }
-*/
+class GetRecords{
+    
+    func setRecords()->[Record]{
+        
+        var records:[Record] = []
+        Firestore.firestore().collection("points").getDocuments(completion: { (querySnapShot, error) in
+            guard let documents = querySnapShot?.documents else{
+                return
+            }
+            for document in documents{
+                let record = Record(document: document)
+                records.append(record)
+                print(record.createdAt)
+            }
+            
+            
+        })
+        return records
+    }
+    
+}
+
+struct ListView:View{
+    @State private var records:[Record] = []
+    var completed:Bool = false
+    init(){
+        self.completed = true
+        setRecords()
+    }
+    
+    func setRecords(){
+        
+        var records:[Record] = []
+        Firestore.firestore().collection("points").getDocuments(completion: { (querySnapShot, error) in
+            guard let documents = querySnapShot?.documents else{
+                return
+            }
+            for document in documents{
+                let record = Record(document: document)
+                records.append(record)
+                print(record.createdAt)
+            }
+            
+            //self.records = records
+            //print(records)
+            
+        })
+        self.records = records
+        print(self.records)
+    }
+  
+    var body: some View{
+        //Text("\(self.completed ? "OK":"not yet")")
+        List(self.records){record in
+            Text("\(self.records.count)")
+        }
+    }
+}
+
 
 struct ArrowDown:View{
     @Binding var isShown:Bool
@@ -295,8 +326,8 @@ struct ArrowUp:View{
             for line in self.drawnPointsArray{
                 var myDic:[String:Any] = [:]
                 myDic["lineColor"] = line.lineColor.description
-                myDic["lineThickness"] = line.lineThickness.description
-                myDic["lineOpacity"] = line.lineOpacity.description
+                myDic["lineThickness"] = line.lineThickness
+                myDic["lineOpacity"] = line.lineOpacity
                 
                 myDic["x"] = line.x.map{$0}
                 myDic["y"] = line.y.map{$0}
