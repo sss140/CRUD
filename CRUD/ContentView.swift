@@ -141,13 +141,45 @@ struct DrawPoints:Identifiable{
     var lineThickness:CGFloat = 1.0
     var lineOpacity:Double = 0.5
 }
-
+struct Record:Identifiable{
+    var id = UUID()
+    var createdAt:Date
+    var drawPointsArray:[DrawPoints]
+    
+    init(document:QueryDocumentSnapshot){
+        let timeStamp = document["timeStamp"] as! Timestamp
+        self.createdAt = timeStamp.dateValue()
+        self.drawPointsArray = []
+        let totalLines = document["totalLines"] as! Int
+        for i in 0..<totalLines{
+            let line = document[String(i)] as! [String:Any]
+            let x = line["x"] as! [CGFloat]
+            let y = line["y"] as! [CGFloat]
+            let lineThickness = line["lineThickness"] as! CGFloat
+            let colorString = line["lineColor"] as! String
+            let lineColor = self.getLineColor(colorString: colorString)
+            let lineOpacity = line["lineOpacity"] as! Double
+            let drawPoints:DrawPoints = DrawPoints(x: x, y: y, lineColor: lineColor, lineThickness: lineThickness, lineOpacity: lineOpacity)
+            self.drawPointsArray.append(drawPoints)
+        }
+    }
+    func getLineColor(colorString:String)->Color{
+        switch colorString{
+        case "black":
+            return Color.black
+        default:
+            return Color.black
+        }
+    }
+}
 
 
 
 struct DrawingView:View{
     let drawnPointsArray:[DrawPoints]
     let drawingPoints:DrawPoints
+    
+    
     
     init(drawnPointsArray:[DrawPoints],drawingPoints:DrawPoints){
         self.drawnPointsArray = drawnPointsArray
@@ -179,6 +211,7 @@ struct BaseView:View{
     @State private var drawnPointsArray:[DrawPoints] = []
     @State private var drawingPoints:DrawPoints = DrawPoints()
     @State private var isShown:Bool = false
+    @State private var records:[Record] = []
     
     var body: some View{
         let dragGeststure = DragGesture()
@@ -211,62 +244,40 @@ struct BaseView:View{
                         .font(.largeTitle).foregroundColor(.black)
                     
                 }
-            }.edgesIgnoringSafeArea(.all)
-                .sheet(isPresented: self.$isShown, content: {ListView()})
-    }
-}
-struct Record:Identifiable{
-    var id = UUID()
-    var createdAt:Date
-    var drawPointsArray:[DrawPoints]
-    
-    init(document:QueryDocumentSnapshot){
-        let timeStamp = document["timeStamp"] as! Timestamp
-        self.createdAt = timeStamp.dateValue()
-        self.drawPointsArray = []
-        let totalLines = document["totalLines"] as! Int
-        for i in 0..<totalLines{
-            let line = document[String(i)] as! [String:Any]
-            let x = line["x"] as! [CGFloat]
-            let y = line["y"] as! [CGFloat]
-            let lineThickness = line["lineThickness"] as! CGFloat
-            let colorString = line["lineColor"] as! String
-            let lineColor = self.getLineColor(colorString: colorString)
-            let lineOpacity = line["lineOpacity"] as! Double
-            let drawPoints:DrawPoints = DrawPoints(x: x, y: y, lineColor: lineColor, lineThickness: lineThickness, lineOpacity: lineOpacity)
-            self.drawPointsArray.append(drawPoints)
-        }
-    }
-    func getLineColor(colorString:String)->Color{
-        switch colorString{
-        case "black":
-            return Color.black
-        default:
-            return Color.black
-        }
-    }
-}
-class GetRecords{
-    
-    func setRecords()->[Record]{
-        
-        var records:[Record] = []
-        Firestore.firestore().collection("points").getDocuments(completion: { (querySnapShot, error) in
-            guard let documents = querySnapShot?.documents else{
-                return
+            }.onAppear(){
+                print("onAppear")
+                
+                Firestore.firestore().collection("points").addSnapshotListener ({ (querySnapShot, error) in
+                    guard let documents = querySnapShot?.documents else{
+                        return
+                    }
+                    self.records.removeAll()
+                    for document in documents{
+                        let record = Record(document: document)
+                        self.records.append(record)
+                    }
+                    self.records.sort(by: {(a,b) -> Bool in return a.createdAt > b.createdAt})
+                })
+                
             }
-            for document in documents{
-                let record = Record(document: document)
-                records.append(record)
-                print(record.createdAt)
-            }
-            
-            
-        })
-        return records
+            .edgesIgnoringSafeArea(.all)
+                .sheet(isPresented: self.$isShown, content: {
+                    List{
+                        ForEach(0..<self.records.count){i in
+                            Button(action: {
+                                print("\(i)")
+                                self.isShown = false
+                                self.drawnPointsArray = self.records[i].drawPointsArray
+                            }, label: {Text("\(self.records[i].createdAt)")})
+                        }
+                    }
+                })
     }
-    
 }
+
+
+
+
 
 struct ListView:View{
     @State private var records:[Record] = []
@@ -320,7 +331,7 @@ struct ArrowUp:View{
     var body: some View{
         Button(action: {
             //show all array
-            var allDic:[String:Any] = ["timeStamp":FieldValue.serverTimestamp()]
+            var allDic:[String:Any] = ["timeStamp":Date()]
             
             var lineNum = 0
             for line in self.drawnPointsArray{
