@@ -19,127 +19,17 @@ import SwiftUI
 import Firebase
 import FirebaseFirestore
 
-struct Restaurant:Identifiable{
-    var id = UUID()
-    var name:String
-    var rating:String
-}
 
+// MARK: - Drawing
 
-
-struct FirebaseView: View {
-    @State private var rating_id = ""
-    @State private var restaurantName = ""
-    @State private var restaurantRating = ""
-    @State var reviewedRestaurants:[Restaurant] = []
-    @State private var showSheet = false
-    
-    var body: some View {
-        VStack{
-            TextField("add a new name", text: $restaurantName).padding()
-            TextField("add a new rating", text: $restaurantRating)
-                .keyboardType(.numberPad)
-                .padding()
-            ScrollView{
-                if reviewedRestaurants.count>0{
-                    ForEach(reviewedRestaurants, id: \.id){ thisRestaurant in
-                        Button(action:{
-                            self.rating_id = thisRestaurant.id.uuidString
-                            self.restaurantName = thisRestaurant.name
-                            self.restaurantRating = thisRestaurant.rating
-                            self.showSheet = true
-                        }){
-                            HStack{
-                                Text("\(thisRestaurant.name) || \(thisRestaurant.rating)")
-                                    .frame(maxWidth:UIScreen.main.bounds.size.width)
-                                    .foregroundColor(.white)
-                            }.background(Color.blue)
-                        }.sheet(isPresented: self.$showSheet){
-                            VStack{
-                                Text("Modify rating - \(self.rating_id)")
-                                TextField("add a new name", text: self.$restaurantName).padding()
-                                TextField("add a new rating", text: self.$restaurantRating)
-                                    .keyboardType(.numberPad)
-                                    .padding()
-                                Button(action: {
-                                    let ratingDictionary = [
-                                        "name":self.restaurantName,
-                                        "rating":self.restaurantRating
-                                    ]
-                                    let docRef = Firestore.firestore().document("ratings/\(self.rating_id)")
-                                    print("setting data")
-                                    docRef.setData(ratingDictionary,merge: true){(error) in
-                                        if let error = error{
-                                            print("error = \(error)")
-                                        }else{
-                                            print("data update successfully")
-                                            self.showSheet = false
-                                            self.restaurantName = ""
-                                            self.restaurantRating = ""
-                                        }
-                                    }
-                                    
-                                }){
-                                    Text("Update Rating")
-                                }
-                            }
-                        }
-                    }
-                }else{
-                    Text("Submit a review")
-                }
-            }.frame(width:UIScreen.main.bounds.size.width)
-                .background(Color.red)
-            Button(action: {
-                let ratingDictionary = [
-                    "name":self.restaurantName,
-                    "rating":self.restaurantRating
-                ]
-                DispatchQueue.main.async {
-                    let docRef = Firestore.firestore().document("ratings/\(UUID().uuidString)")
-                    print("setting data")
-                    docRef.setData(ratingDictionary){(error) in
-                        if let error = error{
-                            print("error = \(error)")
-                        }else{
-                            print("data upload successfully")
-                            self.restaurantName = ""
-                            self.restaurantRating = ""
-                        }
-                    }
-                }
-                
-            }){
-                Text("Add Rating")
-            }
-        }.onAppear(){
-            Firestore.firestore().collection("ratings")
-                .addSnapshotListener{ querySnapshot, error in
-                    guard let documents = querySnapshot?.documents else{
-                        print("Error fetching documents:\(error!)")
-                        return
-                    }
-                    let names = documents.map{$0["name"]!}
-                    let ratings = documents.map{$0["rating"]!}
-                    print(names)
-                    print(ratings)
-                    self.reviewedRestaurants.removeAll()
-                    for i in 0..<names.count{
-                        self.reviewedRestaurants
-                            .append(Restaurant(id:UUID(uuidString: documents[i].documentID) ?? UUID(),name: names[i] as? String ?? "Failed to get name", rating: ratings[i] as? String ?? "Failed to get rating"))
-                    }
-            }
-        }
-    }
-}
 
 struct DrawPoints:Identifiable{
     let id = UUID()
     var x:[CGFloat] = []
     var y:[CGFloat] = []
     var lineColor:Color = .black
-    var lineThickness:CGFloat = 1.0
-    var lineOpacity:Double = 0.5
+    var lineThickness:CGFloat = 5.0
+    var lineOpacity:Double = 1.0
 }
 struct Record:Identifiable{
     var id = UUID()
@@ -153,8 +43,10 @@ struct Record:Identifiable{
         let totalLines = document["totalLines"] as! Int
         for i in 0..<totalLines{
             let line = document[String(i)] as! [String:Any]
-            let x = line["x"] as! [CGFloat]
-            let y = line["y"] as! [CGFloat]
+            var x = line["x"] as! [CGFloat]
+            x = x.map{$0 * UIScreen.main.bounds.width}
+            var y = line["y"] as! [CGFloat]
+            y = y.map{$0 * UIScreen.main.bounds.height}
             let lineThickness = line["lineThickness"] as! CGFloat
             let colorString = line["lineColor"] as! String
             let lineColor = self.getLineColor(colorString: colorString)
@@ -164,12 +56,12 @@ struct Record:Identifiable{
         }
     }
     func getLineColor(colorString:String)->Color{
-        switch colorString{
-        case "black":
-            return Color.black
-        default:
-            return Color.black
+        let colors:[Color] = [.black,.blue,.gray,.green,.orange,.pink,.purple,.red,.yellow,.white]
+        var colorDic:[String:Color] = [:]
+        for color in colors{
+            colorDic[color.description] = color
         }
+        return colorDic[colorString]!
     }
 }
 
@@ -178,8 +70,6 @@ struct Record:Identifiable{
 struct DrawingView:View{
     let drawnPointsArray:[DrawPoints]
     let drawingPoints:DrawPoints
-    
-    
     
     init(drawnPointsArray:[DrawPoints],drawingPoints:DrawPoints){
         self.drawnPointsArray = drawnPointsArray
@@ -194,7 +84,8 @@ struct DrawingView:View{
         }
         return Path{path in
             path.addLines(points)
-        }.stroke(drawingPoints.lineColor,lineWidth: drawingPoints.lineThickness)
+        }.stroke(drawPoints.lineColor,lineWidth: drawPoints.lineThickness)
+            .opacity(drawPoints.lineOpacity)
     }
     
     var body: some View{
@@ -213,6 +104,11 @@ struct BaseView:View{
     @State private var isShown:Bool = false
     @State private var records:[Record] = []
     
+    @State private var colorIndex:Int = 0
+    let colors:[Color] = [.black,.blue,.gray,.green,.orange,.pink,.purple,.red,.yellow,.white]
+    
+    @State private var lineThickness:Float = 5.0
+    @State private var lineOpacity:Float = 1.0
     var body: some View{
         let dragGeststure = DragGesture()
             .onChanged({value in
@@ -221,36 +117,67 @@ struct BaseView:View{
             })
             .onEnded({value in
                 self.drawnPointsArray.append(self.drawingPoints)
-                self.drawingPoints = DrawPoints()
+                self.drawingPoints = DrawPoints(lineColor: self.colors[self.colorIndex], lineThickness: CGFloat(self.lineThickness), lineOpacity: Double(self.lineOpacity))//
             })
         
         return
             ZStack{
                 DrawingView(drawnPointsArray: drawnPointsArray, drawingPoints: drawingPoints)
                     .frame(width:UIScreen.main.bounds.size.width,height: UIScreen.main.bounds.height)
-                    .background(Color.blue)
+                    .background(Color.white)
                     .gesture(dragGeststure)
                 VStack{
                     Spacer()
-                    HStack{
-                        Spacer()
-                        Trash(drawnPointsArray: self.$drawnPointsArray, drawingPoints: self.$drawingPoints)
-                        Spacer()
-                        ArrowUp(drawnPointsArray: self.$drawnPointsArray, drawingPoints: self.$drawingPoints)
-                        Spacer()
-                        ArrowDown(isShown: self.$isShown)
-                        Spacer()
-                    }.offset(x: 0.0, y: -30.0)
-                        .font(.largeTitle).foregroundColor(.black)
+                    VStack{
+                        HStack{
+                            Spacer()
+                            ArrowUp(drawnPointsArray: self.$drawnPointsArray, drawingPoints: self.$drawingPoints)
+                            Spacer()
+                            ArrowDown(isShown: self.$isShown)
+                            Spacer()
+                            Trash(drawnPointsArray: self.$drawnPointsArray, drawingPoints: self.$drawingPoints)
+                            Spacer()
+                        }
+                        HStack{
+                            Spacer()
+                            Button(action: {
+                                self.colorIndex = (self.colorIndex + 1) % self.colors.count
+                                self.drawingPoints.lineColor = self.colors[self.colorIndex]
+                                
+                            }, label: {
+                                VStack{
+                                Image(systemName: "square.fill").font(.largeTitle).foregroundColor(self.colors[self.colorIndex])
+                                Text("\(self.colors[self.colorIndex].description)").font(.caption)
+                                }
+                            })
+                            Spacer()
+                            VStack{
+                            Slider(value: self.$lineThickness, in: Float(1)...Float(50)){value in
+                                self.drawingPoints.lineThickness = CGFloat(self.lineThickness)
+                            }.frame(width: 100.0, alignment: .center)
+                                Text("LineWidth:\(String(format: "%.0f", self.drawingPoints.lineThickness))").font(.caption)
+                            }
+                            Spacer()
+                            VStack{
+                                Slider(value: self.$lineOpacity, in: Float(0.1)...Float(1.0)){value in
+                                    self.drawingPoints.lineOpacity = Double(self.lineOpacity)
+                            }.frame(width: 100.0, alignment: .center)
+                                Text("LineOpacity:\(String(format: "%.1f", self.drawingPoints.lineOpacity))").font(.caption)
+                            }
+                            Spacer()
+                        }
+                    }.offset(x: 0.0, y: -50.0)
+                        .foregroundColor(.black)
                     
                 }
             }.onAppear(){
-                print("onAppear")
+                
                 
                 Firestore.firestore().collection("points").addSnapshotListener ({ (querySnapShot, error) in
                     guard let documents = querySnapShot?.documents else{
                         return
                     }
+                    print("onAppear")
                     self.records.removeAll()
                     for document in documents{
                         let record = Record(document: document)
@@ -261,66 +188,32 @@ struct BaseView:View{
                 
             }
             .edgesIgnoringSafeArea(.all)
-                .sheet(isPresented: self.$isShown, content: {
-                    List{
-                        ForEach(0..<self.records.count){i in
-                            Button(action: {
-                                print("\(i)")
-                                self.isShown = false
-                                self.drawnPointsArray = self.records[i].drawPointsArray
-                            }, label: {Text("\(self.records[i].createdAt)")})
-                        }
+            .sheet(isPresented: self.$isShown, content: {
+                List{
+                    ForEach(0..<self.records.count){i in
+                        Button(action: {
+                            print("\(i)")
+                            self.isShown = false
+                            self.drawnPointsArray = self.records[i].drawPointsArray
+                        }, label: {
+                            Text("\(self.records[i].createdAt)")
+                                .font(.caption)
+                        })
                     }
-                })
+                }
+            })
     }
 }
-
-
-
-
-
-struct ListView:View{
-    @State private var records:[Record] = []
-    var completed:Bool = false
-    init(){
-        self.completed = true
-        setRecords()
-    }
-    
-    func setRecords(){
-        
-        var records:[Record] = []
-        Firestore.firestore().collection("points").getDocuments(completion: { (querySnapShot, error) in
-            guard let documents = querySnapShot?.documents else{
-                return
-            }
-            for document in documents{
-                let record = Record(document: document)
-                records.append(record)
-                print(record.createdAt)
-            }
-            
-            //self.records = records
-            //print(records)
-            
-        })
-        self.records = records
-        print(self.records)
-    }
-  
-    var body: some View{
-        //Text("\(self.completed ? "OK":"not yet")")
-        List(self.records){record in
-            Text("\(self.records.count)")
-        }
-    }
-}
-
 
 struct ArrowDown:View{
     @Binding var isShown:Bool
     var body: some View{
-        Button(action: {self.isShown.toggle()}, label: {Image(systemName: "icloud.and.arrow.down")})
+        Button(action: {self.isShown.toggle()}, label: {
+            VStack{
+                Image(systemName: "icloud.and.arrow.down").font(.largeTitle)
+                Text("LOAD").font(.caption)
+            }
+        })
     }
 }
 
@@ -330,36 +223,47 @@ struct ArrowUp:View{
     @Binding var drawingPoints:DrawPoints
     var body: some View{
         Button(action: {
-            //show all array
-            var allDic:[String:Any] = ["timeStamp":Date()]
-            
-            var lineNum = 0
-            for line in self.drawnPointsArray{
-                var myDic:[String:Any] = [:]
-                myDic["lineColor"] = line.lineColor.description
-                myDic["lineThickness"] = line.lineThickness
-                myDic["lineOpacity"] = line.lineOpacity
+            if self.drawnPointsArray.count>0{
+                var allDic:[String:Any] = ["timeStamp":Date()]
                 
-                myDic["x"] = line.x.map{$0}
-                myDic["y"] = line.y.map{$0}
-                
-                allDic[String(lineNum)] = myDic
-                lineNum += 1
-                
-            }
-            allDic["totalLines"] = lineNum
-            //
-            let docRef = Firestore.firestore().collection("points").document(UUID().uuidString)
-            print("setting data")
-            docRef.setData(allDic,merge: true){(error) in
-                if let error = error{
-                    print("error = \(error)")
-                }else{
-                    print("data update successfully\(lineNum)")
+                var lineNum = 0
+                for line in self.drawnPointsArray{
+                    var myDic:[String:Any] = [:]
+                    myDic["lineColor"] = line.lineColor.description
+                    myDic["lineThickness"] = line.lineThickness
+                    myDic["lineOpacity"] = line.lineOpacity
+                    
+                    myDic["x"] = line.x.map{$0/UIScreen.main.bounds.width}
+                    myDic["y"] = line.y.map{$0/UIScreen.main.bounds.height}
+                    
+                    allDic[String(lineNum)] = myDic
+                    lineNum += 1
+                    
                 }
+                allDic["totalLines"] = lineNum
+                let docRef = Firestore.firestore().collection("points").document(UUID().uuidString)
+                print("setting data")
+                docRef.setData(allDic,merge: true){(error) in
+                    if let error = error{
+                        print("error = \(error)")
+                    }else{
+                        print("data update successfully\(lineNum)")
+                    }
+                }
+                self.drawnPointsArray.removeAll()
             }
-            self.drawnPointsArray.removeAll()
-        }, label: {Image(systemName: "icloud.and.arrow.up")})
+        }, label: {
+            
+            VStack{
+                if self.drawnPointsArray.count>0{
+                    Image(systemName: "icloud.and.arrow.up").font(.largeTitle)
+                }else{
+                    Image(systemName: "icloud.slash").font(.largeTitle)
+                }
+                Text("SAVE").font(.caption)
+            }
+        })
+        
     }
 }
 
@@ -367,7 +271,12 @@ struct Trash:View{
     @Binding var drawnPointsArray:[DrawPoints]
     @Binding var drawingPoints:DrawPoints
     var body: some View{
-        Button(action: {self.drawnPointsArray.removeAll()}, label: {Image(systemName: "trash")})
+        Button(action: {self.drawnPointsArray.removeAll()}, label: {VStack{
+            Image(systemName: "trash").font(.largeTitle)
+            Text("DELETE").font(.caption)
+            
+            }
+        })
     }
 }
 
@@ -376,8 +285,6 @@ struct Trash:View{
 
 struct ContentView: View {
     var body: some View{
-        //FirebaseView()
-        //Text("Text")
         BaseView()
     }
     
